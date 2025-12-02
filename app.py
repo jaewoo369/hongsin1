@@ -23,9 +23,9 @@ st.markdown("""
 # === 구글 뉴스 가져오기 함수 ===
 def get_google_news(ticker, company_name):
     try:
-        # 검색어 설정 (한국 주식은 한글 이름, 미국 주식은 영어 이름)
+        # 검색어 설정
         query = urllib.parse.quote(company_name)
-        # 구글 뉴스 RSS 주소 (한국 설정)
+        # 구글 뉴스 RSS 주소
         rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
         
         feed = feedparser.parse(rss_url)
@@ -39,7 +39,7 @@ with st.sidebar:
     ticker = st.text_input("종목 코드 입력", value="NVDA").upper()
     st.caption("※ 엔터(Enter)를 치면 분석이 갱신됩니다.")
     st.markdown("---")
-    st.info("📢 이제 구글 뉴스와 연동되어 실시간 기사를 가져옵니다!")
+    st.info("📢 실시간 뉴스 & 차트 분석 시스템 가동 중")
 
 # === 메인 로직 ===
 if ticker:
@@ -50,10 +50,9 @@ if ticker:
         if df.empty:
             st.error("데이터를 찾을 수 없습니다.")
         else:
-            # 회사 이름 가져오기 (뉴스 검색용)
+            # 회사 이름 가져오기
             info = stock.info
             company_name = info.get('shortName', ticker)
-            # 이름이 너무 길거나 이상하면 코드로 대체
             if not company_name or company_name == ticker:
                  company_name = ticker
 
@@ -74,9 +73,12 @@ if ticker:
             if current_price > df['MA20'].iloc[-1]: score += 20
             else: score -= 10
             
-            rsi_val = df['RSI'].iloc[-1]
-            if rsi_val < 30: score += 30
-            elif rsi_val > 70: score -= 10
+            # RSI 처리 (데이터 부족 시 예외 처리)
+            if len(df) > 14:
+                rsi_val = df['RSI'].iloc[-1]
+                if rsi_val < 30: score += 30
+                elif rsi_val > 70: score -= 10
+            
             score = max(0, min(100, score))
             
             if score >= 80: grade = "SSS (강력 매수)"
@@ -104,4 +106,31 @@ if ticker:
                 fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='캔들'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], line=dict(color='orange', width=1), name='20일선'), row=1, col=1)
                 fig.add_trace(go.Bar(x=df.index, y=df['Volume'], showlegend=False, marker_color='teal'), row=2, col=1)
-                fig.update_layout(height=500, xaxis_rangeslider_visible=False, template
+                
+                # 여기가 아까 에러났던 부분 (수정됨)
+                fig.update_layout(height=500, xaxis_rangeslider_visible=False, template="plotly_dark", margin=dict(l=10, r=10, t=30, b=10))
+                st.plotly_chart(fig, use_container_width=True)
+
+            with col_news:
+                st.subheader("📰 실시간 뉴스 (Google News)")
+                news_items = get_google_news(ticker, company_name)
+                
+                if not news_items:
+                    st.info("최근 뉴스가 없습니다.")
+                else:
+                    for item in news_items:
+                        title = item.title
+                        link = item.link
+                        pub_date = item.published if 'published' in item else ""
+                        try: pub_date = pub_date.split('+')[0]
+                        except: pass
+                        
+                        st.markdown(f'''
+                        <div class="news-box">
+                            <a href="{link}" target="_blank" class="news-title">{title}</a>
+                            <div class="news-meta">🕒 {pub_date}</div>
+                        </div>
+                        ''', unsafe_allow_html=True)
+
+    except Exception as e:
+        st.error(f"오류 발생: {e}")
